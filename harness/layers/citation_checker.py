@@ -1,10 +1,8 @@
 """LỚP `citation_checker` — bài giảng Day 16, §11 (Grounding & Citations).
 
 NHIỆM VỤ: chỉ cần MỘT tài liệu gắn nhãn `lookalike` hoặc `outdated` lọt
-vào bằng chứng là mô hình neo TOÀN BỘ claim vào đúng tài liệu trông có vẻ
-"chính thống" đó — dù mỗi câu được lấy nguyên văn từ một tài liệu khác.
-Câu thì thật, trích dẫn thì sai. Đây là kiểu sai nguy hiểm nhất trong RAG
-vì báo cáo đọc vào vẫn rất thuyết phục.
+vào bằng chứng là mô hình neo TOÀN BỘ claim vào đúng tài liệu trông "chính thống" đó —
+dù mỗi câu được lấy nguyên văn từ một tài liệu khác.
 
 TÍN HIỆU (chính xác, không cần đoán):
 
@@ -15,14 +13,13 @@ TÍN HIỆU (chính xác, không cần đoán):
 Chú ý chữ DÒNG: kiểm tra `claim["text"] in doc.body` (cả khối, không
 tách dòng) là SAI — scorer chỉ nhận trích dẫn khớp nguyên văn MỘT DÒNG
 (xem "ĐƯỢC PHÉP VÀ KHÔNG ĐƯỢC PHÉP" ngay dưới đây). `in doc.body` coi
-một câu vắt qua hai dòng là hợp lệ, trong khi scorer thì không — tín
+một câu vắt qua hai dòng là hợp lệ, trong بينما scorer thì không — tín
 hiệu kiểu đó khiến bạn giữ nguyên một trích dẫn mà scorer vẫn chấm
 `HALLUCINATED`.
 
 Vế thứ hai mới là phần quan trọng: nó tách việc của bạn khỏi việc của
-`critic` (§2). Câu có trong bằng chứng nhưng gắn sai tài liệu -> GẮN LẠI
-(việc của bạn). Câu không có trong bằng chứng nào -> BỊA, để `critic` xoá.
-Hai điều kiện loại trừ nhau nên hai lớp không giành điểm của nhau.
+`critic` (§11). Câu có trong bằng chứng nhưng gắn sai tài liệu -> GẮN LẠI
+(việc của bạn). Câu không có trong bất kỳ bằng chứng nào -> BỊA, để `critic` xoá.
 
 ĐƯỢC PHÉP VÀ KHÔNG ĐƯỢC PHÉP:
   * ĐƯỢC: đổi `claim["doc_id"]`, cập nhật `report["citations"]`.
@@ -32,13 +29,13 @@ Hai điều kiện loại trừ nhau nên hai lớp không giành điểm của 
     hay vá lại câu bị cắt bằng nội dung lấy từ corpus đều làm mất cả hai
     điều kiện cùng lúc (đo được: -40 điểm).
 
-CHỈ ĐƯỢC GẮN VÀO TÀI LIỆU ĐÃ QUAN SÁT. Trích một tài liệu mà lượt chạy
+CHÍ ONLY ĐƯỢC GẮN VÀO TÀI LIỆU ĐÃ QUAN SÁT. Trích một tài liệu mà lượt chạy
 chưa từng đọc bị chấm `UNRETRIEVED`. Vì vậy hãy tìm nguồn trong
 `ctx.observed_text`, đừng quét cả corpus rồi gắn bừa: điều kiện
 `doc.body in ctx.observed_text` nghĩa là "tài liệu này đã về nguyên vẹn
 từ một lần fetch sạch" — một đoạn snippet hay một bản bị cắt không tính.
 
-CÔNG CỤ CÓ SẴN:
+CÔNG CỨ CÓ SẴN:
     ctx.observed_text  -> toàn bộ quan sát agent đã thấy, nối lại
     ctx.corpus.get(doc_id) -> Doc | None
     ctx.corpus.docs    -> danh sách Doc (doc_id, title, body); qua
@@ -68,16 +65,62 @@ class CitationChecker(Middleware):
     name = "citation_checker"
 
     def after_agent(self, ctx, report):
-        # TODO (§11): khoảng 10-25 dòng.
-        #  1. Lấy report["claims"]; bỏ qua nếu rỗng hoặc ctx.corpus là None.
-        #  2. Với mỗi claim, gọi ctx.corpus.get(claim["doc_id"]).
-        #     Nếu tài liệu tồn tại VÀ claim["text"] khớp NGUYÊN VĂN một
-        #     DÒNG trong body của nó (không phải chỉ "nằm trong body")
-        #     -> trích dẫn đã đúng, giữ nguyên claim.
-        #  3. Nếu không: tìm trong ctx.corpus.docs tài liệu đầu tiên thoả
-        #     doc.body in ctx.observed_text  và  claim["text"] khớp
-        #     nguyên văn một DÒNG của doc.body -> đó là nguồn thật.
-        #     Đổi doc_id sang nó, GIỮ NGUYÊN text.
-        #  4. Không tìm được nguồn nào -> để `critic` xử lý, đừng bịa doc_id.
-        #  5. Cập nhật report["citations"] = danh sách doc_id đã sắp xếp.
-        return report  # <- mặc định KHÔNG LÀM GÌ: agent vẫn chạy được
+        claims = report.get("claims")
+        if not claims or not isinstance(claims, list):
+            return report
+
+        corrected: list[dict] = []
+        updated_citations: set[str] = set()
+
+        for claim in claims:
+            text = claim.get("text", "")
+            doc_id = claim.get("doc_id", "")
+
+            # Bước 1: Nếu tài liệu tồn tại VÀ claim["text"] khớp NGUYÊN VĂN
+            # một DÒNG trong body của nó -> trích dẫn đã đúng, giữ nguyên claim.
+            doc = ctx.corpus.get(doc_id) if ctx.corpus else None
+            if doc and doc.body:
+                for line in doc.body.splitlines():
+                    if line.strip() == text.strip():
+                        corrected.append(claim)
+                        updated_citations.add(doc_id)
+                        break
+                else:
+                    # Không tìm thấy dòng khớp trong doc body -> bước 2
+                    pass
+            else:
+                # Bước 1 thất bại (doc không tồn tại hoặc body rỗng) -> bước 2
+                pass
+
+            # Bước 2: Nếu chưa giữ claim -> tìm trong ctx.corpus.docs
+            # tài liệu đầu tiên thoả doc.body in ctx.observed_text
+            # VÀ claim["text"] khớp nguyên văn một DÒNG của doc.body
+            if not any(c is claim for c in corrected):
+                found_doc_id = None
+                if ctx.corpus and ctx.corpus.docs:
+                    for candidate in ctx.corpus.docs:
+                        candidate_body = candidate.body or ""
+                        # Kiểm tra: doc.body in ctx.observed_text
+                        if candidate_body in ctx.observed_text:
+                            # Kiểm tra claim["text"] khớp một DÒNG của doc.body
+                            for line in candidate_body.splitlines():
+                                if line.strip() == text.strip():
+                                    found_doc_id = candidate.doc_id
+                                    break
+                            if found_doc_id:
+                                break
+
+                if found_doc_id:
+                    # Đổi doc_id sang nó, GIỮ NGUYÊN text
+                    corrected.append({"text": text, "doc_id": found_doc_id})
+                    updated_citations.add(found_doc_id)
+                # Nếu không tìm được -> để claim như cũ, để `critic` xử lý
+
+        # Cập nhật report
+        report["claims"] = corrected
+        if updated_citations:
+            report["citations"] = sorted(updated_citations)
+        else:
+            report["citations"] = []
+
+        return report

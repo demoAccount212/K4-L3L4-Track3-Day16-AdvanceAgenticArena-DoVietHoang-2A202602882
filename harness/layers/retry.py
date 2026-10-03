@@ -49,7 +49,7 @@ của bạn, nên nó chỉ thấy lượt gọi đầu tiên. Một lớp `retr
 tra ngân sách làm cả stack tiêu lố: đo được 34/120 lượt chạy kết thúc ở 9+
 lượt gọi trong khi brief cho 8, và efficiency tụt từ 14.24 xuống 12.06.
 
-CÔNG CỤ CÓ SẴN:
+CÔNG CỨ CÓ SẴN:
     from arena.model import is_degraded
     ctx.state           -> dict tuỳ bạn dùng để đếm số lần thử lại
     ctx.tools.calls     -> số lượt gọi công cụ đã dùng (kể cả submit)
@@ -61,8 +61,7 @@ Xem `harness/middleware.py` để biết thứ tự các hook.
 
 from __future__ import annotations
 
-from arena.model import is_degraded  # noqa: F401  (dùng trong phần TODO)
-
+from arena.model import is_degraded
 from harness.middleware import Middleware
 
 #: Tổng số lần thử, tính cả lần đầu.
@@ -87,15 +86,19 @@ class Retry(Middleware):
 
     def wrap_tool_call(self, ctx, call, name, args):
         result = call(name, args)
-        # TODO (§7): khoảng 8-12 dòng.
-        #  1. Trong khi số lần đã thử < self.max_attempts VÀ kết quả còn
-        #     hỏng — tức `(not result.ok) or is_degraded(result.content)` —
-        #     thì gọi lại `call(name, args)` với ĐÚNG name/args cũ.
-        #  2. DỪNG THỬ LẠI khi ngân sách đã cạn: nếu
-        #     `ctx.max_tool_calls` khác None và
-        #     `ctx.tools.calls >= ctx.max_tool_calls - self.reserve`
-        #     thì đừng gọi thêm lượt nào nữa (xem phần cảnh báo ở trên).
-        #  3. Trả về kết quả cuối cùng (kể cả khi vẫn hỏng: agent phải
-        #     nhìn thấy sự thật, đừng bịa nội dung thay nó).
-        #  4. Ghi số lần đã thử vào ctx.state để gỡ lỗi.
-        return result  # <- mặc định KHÔNG LÀM GÌ: agent vẫn chạy được
+        attempts = 1
+
+        # Thử lại nếu kết quả hỏng (not ok) HOẶC bị suy giảm (is_degraded)
+        while attempts < self.max_attempts and ((not result.ok) or is_degraded(result.content)):
+            # Kiểm tra ngân sách trước khi thử lại
+            if ctx.max_tool_calls is not None and ctx.tools.calls >= ctx.max_tool_calls - self.reserve:
+                break
+            # Gọi lại với ĐÚNG name/args cũ
+            result = call(name, args)
+            attempts += 1
+
+        # Ghi số lần đã thử vào ctx.state để gỡ lỗi
+        ctx.state["retry_attempts"] = ctx.state.get("retry_attempts", 0) + attempts - 1
+
+        # Trả về kết quả cuối cùng (kể cả khi vẫn hỏng: agent phải nhìn thấy sự thật)
+        return result
