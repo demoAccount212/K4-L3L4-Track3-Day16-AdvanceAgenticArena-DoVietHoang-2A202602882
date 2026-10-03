@@ -21,3 +21,4 @@ phases/private/
 # macOS
 .DS_Store
 /.idea
+AGENTS.md
