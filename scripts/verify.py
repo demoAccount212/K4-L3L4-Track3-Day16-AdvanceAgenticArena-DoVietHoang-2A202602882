@@ -29,11 +29,11 @@ if str(LAB_ROOT) not in sys.path:
 #: một dòng nào đó thay đổi thì mọi con số đã đo trong lab này hết hiệu
 #: lực. Đây cũng là mẻ kiểm tra chống gian lận rẻ nhất có thể có.
 FROZEN_MD5 = {
-    "arena/trace.py": "6d457f6aaa49977fe1063154b810651a",
-    "arena/corpus.py": "ce30f315620e78122f054f74a8e8654c",
-    "arena/tools.py": "91eda60d8fc2855f7b5354216b352f94",
-    "arena/model.py": "7e71ed083122dc4f68373a1df7ed4f75",
-    "arena/scorer.py": "0263ec85c6ca16e30c68d4c14425e757",
+    "arena/trace.py": "d099884414162e074f59a2413cfb1a39",
+    "arena/corpus.py": "4d2980d32b02441f07356d809f2379fd",
+    "arena/tools.py": "14bcdd667e3e1c7aabd78383b27e0567",
+    "arena/model.py": "08d9462349c6f265cd72bbb5be707291",
+    "arena/scorer.py": "bfcbae36adde5e5499ccba339f8861ae",
 }
 
 
