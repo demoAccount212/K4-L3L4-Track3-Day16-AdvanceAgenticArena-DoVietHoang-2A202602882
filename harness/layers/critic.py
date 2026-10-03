@@ -77,6 +77,21 @@ class Critic(Middleware):
 
     name = "critic"
 
+    def _text_in_observed(self, text: str, observed_text: str) -> bool:
+        """Check if text appears verbatim in any line of observed_text."""
+        if not text:
+            return False
+        # Exact match in full observed_text
+        if text in observed_text:
+            return True
+        # Check each line of observed_text for substring match
+        # (handles cases where observed_text has extra context around the quote)
+        text_stripped = text.strip()
+        for line in observed_text.splitlines():
+            if text_stripped in line:
+                return True
+        return False
+
     def after_agent(self, ctx, report):
         claims = report.get("claims")
         if not claims or not isinstance(claims, list):
@@ -91,7 +106,7 @@ class Critic(Middleware):
 
         for claim in claims:
             text = claim.get("text", "")
-            if text and text in ctx.observed_text:
+            if text and self._text_in_observed(text, ctx.observed_text):
                 # Nguyên văn xuất hiện trong quan sát -> giữ nguyên (KHÔNG sửa chữ)
                 kept.append(claim)
                 any_kept = True
@@ -103,7 +118,8 @@ class Critic(Middleware):
                 part1, part2 = parts[0].strip(), parts[1].strip()
                 # Cả hai nửa phải xuất hiện nguyên văn trong observed_text
                 # và phải thuộc HAI tài liệu khác nhau
-                if (part1 in ctx.observed_text and part2 in ctx.observed_text):
+                if (self._text_in_observed(part1, ctx.observed_text) and 
+                    self._text_in_observed(part2, ctx.observed_text)):
                     # Tìm doc_id cho từng nửa
                     docs_for_parts = []
                     for p in [part1, part2]:

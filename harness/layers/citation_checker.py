@@ -13,7 +13,7 @@ TÍN HIỆU (chính xác, không cần đoán):
 Chú ý chữ DÒNG: kiểm tra `claim["text"] in doc.body` (cả khối, không
 tách dòng) là SAI — scorer chỉ nhận trích dẫn khớp nguyên văn MỘT DÒNG
 (xem "ĐƯỢC PHÉP VÀ KHÔNG ĐƯỢC PHÉP" ngay dưới đây). `in doc.body` coi
-một câu vắt qua hai dòng là hợp lệ, trong بينما scorer thì không — tín
+một câu vắt qua hai dòng là hợp lệ, trong khi scorer thì không — tín
 hiệu kiểu đó khiến bạn giữ nguyên một trích dẫn mà scorer vẫn chấm
 `HALLUCINATED`.
 
@@ -29,7 +29,7 @@ Vế thứ hai mới là phần quan trọng: nó tách việc của bạn khỏ
     hay vá lại câu bị cắt bằng nội dung lấy từ corpus đều làm mất cả hai
     điều kiện cùng lúc (đo được: -40 điểm).
 
-CHÍ ONLY ĐƯỢC GẮN VÀO TÀI LIỆU ĐÃ QUAN SÁT. Trích một tài liệu mà lượt chạy
+CHỈ ĐƯỢC GẮN VÀO TÀI LIỆU ĐÃ QUAN SÁT. Trích một tài liệu mà lượt chạy
 chưa từng đọc bị chấm `UNRETRIEVED`. Vì vậy hãy tìm nguồn trong
 `ctx.observed_text`, đừng quét cả corpus rồi gắn bừa: điều kiện
 `doc.body in ctx.observed_text` nghĩa là "tài liệu này đã về nguyên vẹn
@@ -64,6 +64,10 @@ class CitationChecker(Middleware):
 
     name = "citation_checker"
 
+    def _line_contains_text(self, line: str, text: str) -> bool:
+        """Check if text appears verbatim in line (substring match after strip)."""
+        return text.strip() in line
+
     def after_agent(self, ctx, report):
         claims = report.get("claims")
         if not claims or not isinstance(claims, list):
@@ -81,7 +85,7 @@ class CitationChecker(Middleware):
             doc = ctx.corpus.get(doc_id) if ctx.corpus else None
             if doc and doc.body:
                 for line in doc.body.splitlines():
-                    if line.strip() == text.strip():
+                    if self._line_contains_text(line, text):
                         corrected.append(claim)
                         updated_citations.add(doc_id)
                         break
@@ -104,7 +108,7 @@ class CitationChecker(Middleware):
                         if candidate_body in ctx.observed_text:
                             # Kiểm tra claim["text"] khớp một DÒNG của doc.body
                             for line in candidate_body.splitlines():
-                                if line.strip() == text.strip():
+                                if self._line_contains_text(line, text):
                                     found_doc_id = candidate.doc_id
                                     break
                             if found_doc_id:
